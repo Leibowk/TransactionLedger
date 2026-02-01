@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { updateTransactionStatus } from "../api/client";
+
 function formatCurrency(value) {
   const num = typeof value === "string" ? parseFloat(value) : value;
   return new Intl.NumberFormat("en-US", {
@@ -30,10 +33,27 @@ function statusBadgeClass(status) {
   }
 }
 
-export function TransactionList({ transactions }) {
+export function TransactionList({ transactions, accountId, onRefetch }) {
+  const [actionTxId, setActionTxId] = useState(null);
+  const [actionError, setActionError] = useState(null);
+
   const sorted = [...(transactions ?? [])].sort(
     (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
   );
+
+  async function handleStatusChange(txId, status) {
+    if (!accountId || !onRefetch) return;
+    setActionError(null);
+    setActionTxId(txId);
+    try {
+      await updateTransactionStatus(accountId, txId, status);
+      onRefetch();
+    } catch (err) {
+      setActionError(err.message || "Could not update status");
+    } finally {
+      setActionTxId(null);
+    }
+  }
 
   if (sorted.length === 0) {
     return (
@@ -51,6 +71,14 @@ export function TransactionList({ transactions }) {
       className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800"
       aria-label="Transaction ledger"
     >
+      {actionError && (
+        <p
+          className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200"
+          role="alert"
+        >
+          {actionError}
+        </p>
+      )}
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
           <thead className="bg-slate-50 dark:bg-slate-700/50">
@@ -85,6 +113,14 @@ export function TransactionList({ transactions }) {
               >
                 Amount
               </th>
+              {(accountId != null && onRefetch) && (
+                <th
+                  scope="col"
+                  className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400"
+                >
+                  Actions
+                </th>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -119,6 +155,32 @@ export function TransactionList({ transactions }) {
                   {tx.type === "CREDIT" ? "+" : "−"}
                   {formatCurrency(tx.amount)}
                 </td>
+                {accountId != null && onRefetch && (
+                  <td className="whitespace-nowrap px-4 py-3 text-right">
+                    {tx.status === "PENDING" ? (
+                      <span className="flex justify-end gap-1">
+                        <button
+                          type="button"
+                          disabled={actionTxId === tx.id}
+                          onClick={() => handleStatusChange(tx.id, "SETTLED")}
+                          className="rounded border border-emerald-600 bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-70 dark:border-emerald-500 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+                        >
+                          Settle
+                        </button>
+                        <button
+                          type="button"
+                          disabled={actionTxId === tx.id}
+                          onClick={() => handleStatusChange(tx.id, "FAILED")}
+                          className="rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-600"
+                        >
+                          Fail
+                        </button>
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

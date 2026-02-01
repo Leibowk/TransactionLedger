@@ -18,6 +18,16 @@ export function AccountSummary({ account }) {
     >
       <h2 className="sr-only">Account summary</h2>
       <div className="space-y-4">
+        {account.member && (
+          <div>
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              Account holder
+            </p>
+            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+              {account.member.first_name} {account.member.last_name}
+            </p>
+          </div>
+        )}
         <div>
           <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
             Account name

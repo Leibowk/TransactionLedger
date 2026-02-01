@@ -20,3 +20,32 @@ export async function getTransactions(accountId) {
   }
   return res.json();
 }
+
+export async function createTransaction(accountId, body) {
+  const res = await fetch(`${baseUrl}/accounts/${accountId}/transactions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || "Could not create transaction");
+  }
+  return res.json();
+}
+
+export async function updateTransactionStatus(accountId, transactionId, status) {
+  const res = await fetch(
+    `${baseUrl}/accounts/${accountId}/transactions/${transactionId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    }
+  );
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || "Could not update transaction status");
+  }
+  return res.json();
+}
