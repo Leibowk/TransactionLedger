@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict, condecimal
-from typing import Optional
+from typing import Literal, Optional
 from datetime import datetime
 import enum
 
@@ -49,6 +49,11 @@ class TransactionBase(BaseModel):
 
 class TransactionCreate(TransactionBase):
     pass
+
+
+class TransactionStatusUpdate(BaseModel):
+    status: Literal["SETTLED", "FAILED"]
+
 
 class Transaction(TransactionBase):
     model_config = ConfigDict(from_attributes=True)
