@@ -1,4 +1,4 @@
-from pydantic import BaseModel, condecimal
+from pydantic import BaseModel, ConfigDict, condecimal
 from typing import Optional
 from datetime import datetime
 import enum
@@ -12,17 +12,35 @@ class TransactionStatus(str, enum.Enum):
     SETTLED = "SETTLED"
     FAILED = "FAILED"
 
+class AccountType(str, enum.Enum):
+    CHECKING = "CHECKING"
+    SAVINGS = "SAVINGS"
+
+class Member(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    first_name: str
+    last_name: str
+    email: str
+    phone: str
+    address: str
+    city: str
+    state: str
+    zip: str
+    country: str
+
 class AccountBase(BaseModel):
     name: str
     masked_account_number: str
 
 class Account(AccountBase):
+    model_config = ConfigDict(from_attributes=True)
     id: int
+    account_type: AccountType
+    member_id: int
     available_balance: condecimal(max_digits=18, decimal_places=2)
     current_balance: condecimal(max_digits=18, decimal_places=2)
-
-    class Config:
-        orm_mode = True
+    member: Member
 
 class TransactionBase(BaseModel):
     amount: condecimal(max_digits=18, decimal_places=2)
@@ -33,10 +51,8 @@ class TransactionCreate(TransactionBase):
     pass
 
 class Transaction(TransactionBase):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     account_id: int
     status: TransactionStatus
     timestamp: datetime
-
-    class Config:
-        orm_mode = True

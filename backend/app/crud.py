@@ -1,11 +1,16 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from . import models, schemas
 from datetime import datetime
 
 # Account CRUD
 
 def get_account(db: Session, account_id: int):
-    return db.query(models.Account).filter(models.Account.id == account_id).first()
+    return (
+        db.query(models.Account)
+        .options(joinedload(models.Account.member))
+        .filter(models.Account.id == account_id)
+        .first()
+    )
 
 # Transaction CRUD
 
