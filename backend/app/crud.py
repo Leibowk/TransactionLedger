@@ -1,10 +1,68 @@
 from decimal import Decimal
-from sqlalchemy.orm import Session, joinedload
-from . import models, schemas
-from .exceptions import AccountNotFoundError, InsufficientFundsError, InvalidTransitionError, TransactionNotFoundError
 from datetime import datetime
+from sqlalchemy.orm import Session, joinedload
 
-# Account CRUD
+from fastapi import Depends
+
+from . import models
+from .db import get_db
+
+# Repository: request-scoped wrapper over a session. Injected via get_repository.
+
+
+def get_repository(db: Session = Depends(get_db)) -> "Repository":
+    """Dependency: yields a request-scoped repository (crud + session)."""
+    return Repository(db)
+
+
+class Repository:
+    """Holds the DB session and delegates to crud. Only crud layer touches db."""
+
+    def __init__(self, db: Session):
+        self._db = db
+
+    def get_account(self, account_id: int):
+        return get_account(self._db, account_id)
+
+    def get_account_for_update(self, account_id: int):
+        return get_account_for_update(self._db, account_id)
+
+    def get_transactions(self, account_id: int):
+        return get_transactions(self._db, account_id)
+
+    def get_transaction(self, account_id: int, transaction_id: int):
+        return get_transaction(self._db, account_id, transaction_id)
+
+    def insert_transaction(
+        self,
+        account_id: int,
+        amount: Decimal,
+        counterparty: str,
+        type: models.TransactionType,
+        status: models.TransactionStatus,
+        timestamp: datetime,
+    ):
+        return insert_transaction(
+            self._db,
+            account_id,
+            amount,
+            counterparty,
+            type,
+            status,
+            timestamp,
+        )
+
+    def commit(self) -> None:
+        commit(self._db)
+
+    def rollback(self) -> None:
+        rollback(self._db)
+
+    def refresh(self, *objs) -> None:
+        refresh(self._db, *objs)
+
+
+# Account repository
 
 def get_account(db: Session, account_id: int):
     return (
@@ -14,89 +72,67 @@ def get_account(db: Session, account_id: int):
         .first()
     )
 
-# Transaction CRUD
+def get_account_for_update(db: Session, account_id: int):
+    return (
+        db.query(models.Account)
+        .filter(models.Account.id == account_id)
+        .with_for_update()
+        .first()
+    )
+
+# Transaction repository
 
 def get_transactions(db: Session, account_id: int):
-    return db.query(models.Transaction).filter(models.Transaction.account_id == account_id).order_by(models.Transaction.timestamp.desc()).all()
+    return (
+        db.query(models.Transaction)
+        .filter(models.Transaction.account_id == account_id)
+        .order_by(models.Transaction.timestamp.desc())
+        .all()
+    )
 
 def get_transaction(db: Session, account_id: int, transaction_id: int):
     return (
         db.query(models.Transaction)
-        .filter(models.Transaction.account_id == account_id, models.Transaction.id == transaction_id)
+        .filter(
+            models.Transaction.account_id == account_id,
+            models.Transaction.id == transaction_id,
+        )
         .first()
     )
 
-def update_transaction_status(db: Session, account_id: int, transaction_id: int, new_status: str):
-    transaction = get_transaction(db, account_id, transaction_id)
-    if not transaction:
-        raise TransactionNotFoundError("Transaction not found")
-    if transaction.status != models.TransactionStatus.PENDING:
-        raise InvalidTransitionError("Transaction is not pending")
-    if new_status not in ("SETTLED", "FAILED"):
-        raise InvalidTransitionError("Status must be SETTLED or FAILED")
-
-    account = (
-        db.query(models.Account)
-        .filter(models.Account.id == account_id)
-        .with_for_update()
-        .first()
+def insert_transaction(
+    db: Session,
+    account_id: int,
+    amount: Decimal,
+    counterparty: str,
+    type: models.TransactionType,
+    status: models.TransactionStatus,
+    timestamp: datetime,
+):
+    transaction = models.Transaction(
+        account_id=account_id,
+        amount=amount,
+        counterparty=counterparty,
+        type=type,
+        status=status,
+        timestamp=timestamp,
     )
-    if not account:
-        raise AccountNotFoundError("Account not found")
-
-    status_enum = models.TransactionStatus.SETTLED if new_status == "SETTLED" else models.TransactionStatus.FAILED
-    transaction.status = status_enum
-
-    amount = Decimal(transaction.amount)
-    is_credit = transaction.type == models.TransactionType.CREDIT
-
-    if new_status == "SETTLED":
-        if is_credit:
-            account.available_balance = (account.available_balance + amount).quantize(Decimal("0.01"))
-    else:
-        if is_credit:
-            account.current_balance = (account.current_balance - amount).quantize(Decimal("0.01"))
-        else:
-            account.available_balance = (account.available_balance + amount).quantize(Decimal("0.01"))
-            account.current_balance = (account.current_balance + amount).quantize(Decimal("0.01"))
-
-    db.commit()
-    db.refresh(transaction)
+    db.add(transaction)
+    db.flush()
     return transaction
 
-def create_transaction(db: Session, transaction: schemas.TransactionCreate, account_id: int):
-    account = (
-        db.query(models.Account)
-        .filter(models.Account.id == account_id)
-        .with_for_update()
-        .first()
-    )
-    if not account:
-        raise AccountNotFoundError("Account not found")
 
-    is_debit = transaction.type.value == "DEBIT"
-    if is_debit:
-        if account.available_balance < transaction.amount:
-            raise InsufficientFundsError("Insufficient funds")
-
-    db_transaction = models.Transaction(
-        account_id=account_id,
-        amount=transaction.amount,
-        counterparty=transaction.counterparty,
-        type=models.TransactionType.CREDIT if transaction.type.value == "CREDIT" else models.TransactionType.DEBIT,
-        status=models.TransactionStatus.PENDING,
-        timestamp=datetime.utcnow()
-    )
-    db.add(db_transaction)
-    db.flush()
-
-    amount = Decimal(transaction.amount)
-    if transaction.type.value == "CREDIT":
-        account.current_balance = (account.current_balance + amount).quantize(Decimal("0.01"))
-    else:
-        account.available_balance = (account.available_balance - amount).quantize(Decimal("0.01"))
-        account.current_balance = (account.current_balance - amount).quantize(Decimal("0.01"))
-
+def commit(db: Session) -> None:
+    """Persist pending changes. Call after service has applied mutations."""
     db.commit()
-    db.refresh(db_transaction)
-    return db_transaction
+
+
+def rollback(db: Session) -> None:
+    """Roll back the current transaction. Call on domain errors."""
+    db.rollback()
+
+
+def refresh(db: Session, *objs) -> None:
+    """Reload one or more instances from the database."""
+    for obj in objs:
+        db.refresh(obj)

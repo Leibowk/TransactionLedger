@@ -1,49 +1,56 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from .. import crud, schemas, models, db
-from ..exceptions import AccountNotFoundError, InsufficientFundsError, InvalidTransitionError, TransactionNotFoundError
+from fastapi import APIRouter, Depends
+
+from .. import schemas
+from ..services.ledger_service import LedgerService, get_ledger_service
+from ..exceptions import DomainError
+from .error_handling import handle_domain_exception
 
 router = APIRouter()
 
-def get_db():
-    db_session = db.SessionLocal()
-    try:
-        yield db_session
-    finally:
-        db_session.close()
 
 @router.get("/accounts/{account_id}", response_model=schemas.Account)
-def read_account(account_id: int, db: Session = Depends(get_db)):
-    account = crud.get_account(db, account_id)
-    if not account:
-        raise HTTPException(status_code=404, detail="Account not found")
-    return account
+def read_account(account_id: int, ledger: LedgerService = Depends(get_ledger_service)):
+    try:
+        return ledger.get_account(account_id)
+    except DomainError as e:
+        handle_domain_exception(e, ledger)
+
 
 @router.get("/accounts/{account_id}/transactions", response_model=list[schemas.Transaction])
-def read_transactions(account_id: int, db: Session = Depends(get_db)):
-    return crud.get_transactions(db, account_id)
+def read_transactions(
+    account_id: int, ledger: LedgerService = Depends(get_ledger_service)
+):
+    try:
+        return ledger.get_transactions(account_id)
+    except DomainError as e:
+        handle_domain_exception(e, ledger)
+
 
 @router.post("/accounts/{account_id}/transactions", response_model=schemas.Transaction)
-def create_transaction(account_id: int, transaction: schemas.TransactionCreate, db: Session = Depends(get_db)):
+def create_transaction(
+    account_id: int,
+    transaction: schemas.TransactionCreate,
+    ledger: LedgerService = Depends(get_ledger_service),
+):
     try:
-        return crud.create_transaction(db, transaction, account_id)
-    except AccountNotFoundError:
-        raise HTTPException(status_code=404, detail="Account not found")
-    except InsufficientFundsError:
-        raise HTTPException(status_code=400, detail="Insufficient funds")
+        return ledger.create_transaction(account_id, transaction)
+    except DomainError as e:
+        handle_domain_exception(e, ledger)
 
-@router.patch("/accounts/{account_id}/transactions/{transaction_id}", response_model=schemas.Transaction)
+
+@router.patch(
+    "/accounts/{account_id}/transactions/{transaction_id}",
+    response_model=schemas.Transaction,
+)
 def update_transaction_status(
     account_id: int,
     transaction_id: int,
     body: schemas.TransactionStatusUpdate,
-    db: Session = Depends(get_db),
+    ledger: LedgerService = Depends(get_ledger_service),
 ):
     try:
-        return crud.update_transaction_status(db, account_id, transaction_id, body.status)
-    except TransactionNotFoundError:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-    except AccountNotFoundError:
-        raise HTTPException(status_code=404, detail="Account not found")
-    except InvalidTransitionError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        return ledger.update_transaction_status(
+            account_id, transaction_id, body.status
+        )
+    except DomainError as e:
+        handle_domain_exception(e, ledger)
