@@ -48,8 +48,8 @@ class LedgerService:
             raise TransactionNotFoundError("Transaction not found")
         return transaction
 
-    async def get_transactions(self, account: Account):
-        return await self._repo.get_transactions(account.id)
+    async def get_transactions(self, account_id: int):
+        return await self._repo.get_transactions(account_id)
 
     async def create_transaction(self, account: Account, payload: schemas.TransactionCreate):
         if payload.type.value == "DEBIT" and account.available_balance < payload.amount:

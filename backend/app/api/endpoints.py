@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from .. import schemas
+from ..models import Account
 from ..services.ledger_service import LedgerService, get_ledger_service
 from ..exceptions import DomainError
 from .error_handling import handle_domain_exception
@@ -20,7 +21,7 @@ RESPONSE_404 = {404: {"description": "Not found"}}
     response_model=schemas.Account,
     responses=RESPONSE_404,
 )
-async def read_account(account=Depends(valid_account)):
+async def read_account(account: Account = Depends(valid_account)):
     """Account existence validated by valid_account dependency; return it."""
     return account
 
@@ -31,10 +32,10 @@ async def read_account(account=Depends(valid_account)):
     responses=RESPONSE_404,
 )
 async def read_transactions(
-    account=Depends(valid_account),
+    account: Account = Depends(valid_account),
     ledger: LedgerService = Depends(get_ledger_service),
 ):
-    return await ledger.get_transactions(account)
+    return await ledger.get_transactions(account.id)
 
 
 @router.post(

@@ -1,30 +1,21 @@
-import os
-from pathlib import Path
-
-from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+from .config import get_database_config
 
-DATABASE_URL = os.getenv("DATABASE_URL", "")
-# Async URL for asyncpg (Alembic and seed script keep using sync postgresql://)
-ASYNC_DATABASE_URL = (
-    DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
-    if DATABASE_URL.startswith("postgresql://")
-    else DATABASE_URL.replace("postgresql+psycopg2", "postgresql+asyncpg", 1)
-    if "postgresql" in DATABASE_URL
-    else ""
-)
+_db_config = get_database_config()
+
+# Exported for tests and tools that need the async URL
+ASYNC_DATABASE_URL = _db_config.async_database_url
 
 # Sync engine and session for seed script and external tools (e.g. Alembic uses .env URL directly)
-engine = create_engine(DATABASE_URL, echo=True, future=True)
+engine = create_engine(_db_config.DATABASE_URL, echo=True, future=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Async engine and session for the FastAPI app
 async_engine = create_async_engine(
-    ASYNC_DATABASE_URL,
+    _db_config.async_database_url,
     echo=True,
     future=True,
 )
