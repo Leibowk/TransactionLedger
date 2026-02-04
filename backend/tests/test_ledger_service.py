@@ -59,7 +59,7 @@ async def test_get_transactions_returns_list_when_account_exists():
     repo.get_transactions = AsyncMock(return_value=[])
 
     service = LedgerService(repo)
-    result = await service.get_transactions(account)
+    result = await service.get_transactions(account.id)
 
     assert result == []
     repo.get_transactions.assert_called_once_with(account.id)
