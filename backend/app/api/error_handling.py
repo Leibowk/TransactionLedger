@@ -17,9 +17,9 @@ DOMAIN_EXCEPTION_TO_HTTP = {
 }
 
 
-def handle_domain_exception(e: DomainError, ledger: LedgerService) -> None:
+async def handle_domain_exception(e: DomainError, ledger: LedgerService) -> None:
     """Roll back the session and raise an HTTPException from a domain exception."""
-    ledger.rollback()
+    await ledger.rollback()
     pair = DOMAIN_EXCEPTION_TO_HTTP.get(type(e))
     if pair is None:
         raise HTTPException(status_code=500, detail="Internal server error")

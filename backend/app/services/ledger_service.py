@@ -1,9 +1,10 @@
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import Depends
 
 from .. import models, schemas
+from ..models import Account, Transaction
 from ..crud import Repository, get_repository
 from ..exceptions import (
     AccountNotFoundError,
@@ -15,7 +16,7 @@ from ..exceptions import (
 QUANTIZE = Decimal("0.01")
 
 
-def get_ledger_service(repo: Repository = Depends(get_repository)) -> "LedgerService":
+async def get_ledger_service(repo: Repository = Depends(get_repository)) -> "LedgerService":
     """Dependency: yields a request-scoped ledger service with injected repo."""
     return LedgerService(repo)
 
@@ -26,25 +27,31 @@ class LedgerService:
     def __init__(self, repo: Repository):
         self._repo = repo
 
-    def rollback(self) -> None:
-        self._repo.rollback()
+    async def rollback(self) -> None:
+        await self._repo.rollback()
 
-    def get_account(self, account_id: int):
-        account = self._repo.get_account(account_id)
+    async def get_account(self, account_id: int) -> Account:
+        account = await self._repo.get_account(account_id)
         if account is None:
             raise AccountNotFoundError("Account not found")
         return account
 
-    def get_transactions(self, account_id: int):
-        if self._repo.get_account(account_id) is None:
-            raise AccountNotFoundError("Account not found")
-        return self._repo.get_transactions(account_id)
-
-    def create_transaction(self, account_id: int, payload: schemas.TransactionCreate):
-        account = self._repo.get_account_for_update(account_id)
+    async def get_account_for_update(self, account_id: int) -> Account:
+        account = await self._repo.get_account_for_update(account_id)
         if account is None:
             raise AccountNotFoundError("Account not found")
+        return account
 
+    async def get_transaction(self, account_id: int, transaction_id: int) -> Transaction:
+        transaction = await self._repo.get_transaction(account_id, transaction_id)
+        if transaction is None:
+            raise TransactionNotFoundError("Transaction not found")
+        return transaction
+
+    async def get_transactions(self, account: Account):
+        return await self._repo.get_transactions(account.id)
+
+    async def create_transaction(self, account: Account, payload: schemas.TransactionCreate):
         if payload.type.value == "DEBIT" and account.available_balance < payload.amount:
             raise InsufficientFundsError("Insufficient funds")
 
@@ -53,13 +60,13 @@ class LedgerService:
             if payload.type.value == "CREDIT"
             else models.TransactionType.DEBIT
         )
-        transaction = self._repo.insert_transaction(
-            account_id=account_id,
+        transaction = await self._repo.insert_transaction(
+            account_id=account.id,
             amount=payload.amount,
             counterparty=payload.counterparty,
             type=tx_type,
             status=models.TransactionStatus.PENDING,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
         )
 
         amount = Decimal(payload.amount).quantize(QUANTIZE)
@@ -75,24 +82,17 @@ class LedgerService:
                 account.current_balance - amount
             ).quantize(QUANTIZE)
 
-        self._repo.commit()
-        self._repo.refresh(transaction)
+        await self._repo.commit()
+        await self._repo.refresh(transaction)
         return transaction
 
-    def update_transaction_status(
-        self, account_id: int, transaction_id: int, new_status: str
+    async def update_transaction_status(
+        self, account: Account, transaction: Transaction, new_status: str
     ):
-        transaction = self._repo.get_transaction(account_id, transaction_id)
-        if transaction is None:
-            raise TransactionNotFoundError("Transaction not found")
         if transaction.status != models.TransactionStatus.PENDING:
             raise InvalidTransitionError("Transaction is not pending")
         if new_status not in ("SETTLED", "FAILED"):
             raise InvalidTransitionError("Status must be SETTLED or FAILED")
-
-        account = self._repo.get_account_for_update(account_id)
-        if account is None:
-            raise AccountNotFoundError("Account not found")
 
         status_enum = (
             models.TransactionStatus.SETTLED
@@ -122,6 +122,6 @@ class LedgerService:
                     account.current_balance + amount
                 ).quantize(QUANTIZE)
 
-        self._repo.commit()
-        self._repo.refresh(transaction)
+        await self._repo.commit()
+        await self._repo.refresh(transaction)
         return transaction

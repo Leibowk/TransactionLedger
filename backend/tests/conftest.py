@@ -1,61 +1,67 @@
-"""Pytest fixtures: app, client with overridden get_db, test DB session and account."""
+"""Pytest fixtures: app, async client with overridden get_db, test DB session and account."""
 from decimal import Decimal
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
-from sqlalchemy.orm import Session
-from starlette.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
-from app.db import engine, get_db
+from app.db import get_db, ASYNC_DATABASE_URL
 from app.main import app
 from app.models import Account, AccountType, Member
 
+# Async engine and session for tests (same URL as app)
+_test_async_engine = create_async_engine(
+    ASYNC_DATABASE_URL,
+    echo=False,
+)
+_test_async_session_factory = async_sessionmaker(
+    _test_async_engine,
+    class_=AsyncSession,
+    autocommit=False,
+    autoflush=False,
+    expire_on_commit=False,
+)
+
 
 @pytest.fixture
-def db_connection():
-    """Create a connection and outer transaction; roll back in teardown for isolation."""
-    connection = engine.connect()
-    trans = connection.begin()
-    try:
-        yield connection
-    finally:
+async def db_connection():
+    """Create an async connection and outer transaction; roll back in teardown for isolation."""
+    async with _test_async_engine.connect() as conn:
+        trans = await conn.begin()
         try:
-            trans.rollback()
-        except Exception:
-            pass
-        connection.close()
+            yield conn
+        finally:
+            await trans.rollback()
 
 
 @pytest.fixture
-def db_session(db_connection):
-    """Session bound to the test connection; all work is rolled back after the test."""
-    session = Session(
-        bind=db_connection,
-        autocommit=False,
-        autoflush=False,
-    )
-    # Bump sequences so inserts get ids not used by seed data (avoids UniqueViolation).
-    session.execute(text(
+async def db_session(db_connection):
+    """Async session bound to the test connection; all work is rolled back after the test."""
+    conn = db_connection
+    session = AsyncSession(bind=conn, expire_on_commit=False)
+    # Bump sequences so inserts get ids not used by seed data
+    await session.execute(text(
         "SELECT setval(pg_get_serial_sequence('members', 'id'), "
         "COALESCE((SELECT MAX(id) FROM members), 0) + 1)"
     ))
-    session.execute(text(
+    await session.execute(text(
         "SELECT setval(pg_get_serial_sequence('accounts', 'id'), "
         "COALESCE((SELECT MAX(id) FROM accounts), 0) + 1)"
     ))
-    session.execute(text(
+    await session.execute(text(
         "SELECT setval(pg_get_serial_sequence('transactions', 'id'), "
         "COALESCE((SELECT MAX(id) FROM transactions), 0) + 1)"
     ))
-    session.flush()
+    await session.flush()
     try:
         yield session
     finally:
-        session.close()
+        await session.close()
 
 
 @pytest.fixture
-def test_account(db_session):
+async def test_account(db_session):
     """One test member and account; account has non-zero balances for debit tests."""
     member = Member(
         first_name="Test",
@@ -69,7 +75,7 @@ def test_account(db_session):
         country="US",
     )
     db_session.add(member)
-    db_session.flush()
+    await db_session.flush()
 
     account = Account(
         name="Test Checking",
@@ -81,19 +87,23 @@ def test_account(db_session):
         current_balance=Decimal("100.00"),
     )
     db_session.add(account)
-    db_session.flush()
+    await db_session.flush()
 
     return account
 
 
 @pytest.fixture
-def client(db_session, test_account):
-    """TestClient with get_db overridden to use the test session (same session sees test_account)."""
-    def override_get_db():
+async def client(db_session, test_account):
+    """AsyncClient with get_db overridden to use the test session."""
+    async def override_get_db():
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
     try:
-        yield TestClient(app)
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as ac:
+            yield ac
     finally:
         app.dependency_overrides.clear()

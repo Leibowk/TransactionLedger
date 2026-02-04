@@ -4,53 +4,67 @@ from .. import schemas
 from ..services.ledger_service import LedgerService, get_ledger_service
 from ..exceptions import DomainError
 from .error_handling import handle_domain_exception
+from .dependencies import (
+    valid_account,
+    valid_account_for_update,
+    valid_transaction,
+)
 
 router = APIRouter()
 
-
-@router.get("/accounts/{account_id}", response_model=schemas.Account)
-def read_account(account_id: int, ledger: LedgerService = Depends(get_ledger_service)):
-    try:
-        return ledger.get_account(account_id)
-    except DomainError as e:
-        handle_domain_exception(e, ledger)
+RESPONSE_404 = {404: {"description": "Not found"}}
 
 
-@router.get("/accounts/{account_id}/transactions", response_model=list[schemas.Transaction])
-def read_transactions(
-    account_id: int, ledger: LedgerService = Depends(get_ledger_service)
+@router.get(
+    "/accounts/{account_id}",
+    response_model=schemas.Account,
+    responses=RESPONSE_404,
+)
+async def read_account(account=Depends(valid_account)):
+    """Account existence validated by valid_account dependency; return it."""
+    return account
+
+
+@router.get(
+    "/accounts/{account_id}/transactions",
+    response_model=list[schemas.Transaction],
+    responses=RESPONSE_404,
+)
+async def read_transactions(
+    account=Depends(valid_account),
+    ledger: LedgerService = Depends(get_ledger_service),
 ):
-    try:
-        return ledger.get_transactions(account_id)
-    except DomainError as e:
-        handle_domain_exception(e, ledger)
+    return await ledger.get_transactions(account)
 
 
-@router.post("/accounts/{account_id}/transactions", response_model=schemas.Transaction)
-def create_transaction(
-    account_id: int,
+@router.post(
+    "/accounts/{account_id}/transactions",
+    response_model=schemas.Transaction,
+    responses=RESPONSE_404,
+)
+async def create_transaction(
     transaction: schemas.TransactionCreate,
+    account=Depends(valid_account_for_update),
     ledger: LedgerService = Depends(get_ledger_service),
 ):
     try:
-        return ledger.create_transaction(account_id, transaction)
+        return await ledger.create_transaction(account, transaction)
     except DomainError as e:
-        handle_domain_exception(e, ledger)
+        await handle_domain_exception(e, ledger)
 
 
 @router.patch(
     "/accounts/{account_id}/transactions/{transaction_id}",
     response_model=schemas.Transaction,
+    responses=RESPONSE_404,
 )
-def update_transaction_status(
-    account_id: int,
-    transaction_id: int,
+async def update_transaction_status(
     body: schemas.TransactionStatusUpdate,
+    account=Depends(valid_account_for_update),
+    transaction=Depends(valid_transaction),
     ledger: LedgerService = Depends(get_ledger_service),
 ):
     try:
-        return ledger.update_transaction_status(
-            account_id, transaction_id, body.status
-        )
+        return await ledger.update_transaction_status(account, transaction, body.status)
     except DomainError as e:
-        handle_domain_exception(e, ledger)
+        await handle_domain_exception(e, ledger)

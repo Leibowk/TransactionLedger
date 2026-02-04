@@ -1,11 +1,11 @@
 """API tests: HTTP endpoints with test DB (get_db overridden)."""
 import pytest
-from fastapi.testclient import TestClient
+from httpx import AsyncClient
 
 
-def test_get_account_ok(client: TestClient, test_account):
+async def test_get_account_ok(client: AsyncClient, test_account):
     """GET /accounts/{id} returns 200 and account when account exists."""
-    response = client.get(f"/accounts/{test_account.id}")
+    response = await client.get(f"/accounts/{test_account.id}")
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == test_account.id
@@ -17,30 +17,30 @@ def test_get_account_ok(client: TestClient, test_account):
     assert data["member"]["first_name"] == "Test"
 
 
-def test_get_account_not_found(client: TestClient):
+async def test_get_account_not_found(client: AsyncClient):
     """GET /accounts/{id} returns 404 when account does not exist."""
-    response = client.get("/accounts/999999")
+    response = await client.get("/accounts/999999")
     assert response.status_code == 404
     assert response.json()["detail"] == "Account not found"
 
 
-def test_get_transactions_ok(client: TestClient, test_account):
+async def test_get_transactions_ok(client: AsyncClient, test_account):
     """GET /accounts/{id}/transactions returns 200 and list (may be empty)."""
-    response = client.get(f"/accounts/{test_account.id}/transactions")
+    response = await client.get(f"/accounts/{test_account.id}/transactions")
     assert response.status_code == 200
     assert response.json() == []
 
 
-def test_get_transactions_account_not_found(client: TestClient):
+async def test_get_transactions_account_not_found(client: AsyncClient):
     """GET /accounts/{id}/transactions returns 404 when account does not exist."""
-    response = client.get("/accounts/999999/transactions")
+    response = await client.get("/accounts/999999/transactions")
     assert response.status_code == 404
     assert response.json()["detail"] == "Account not found"
 
 
-def test_post_transaction_credit_ok(client: TestClient, test_account):
+async def test_post_transaction_credit_ok(client: AsyncClient, test_account):
     """POST /accounts/{id}/transactions with CREDIT returns 200 and transaction."""
-    response = client.post(
+    response = await client.post(
         f"/accounts/{test_account.id}/transactions",
         json={
             "amount": "50.00",
@@ -58,9 +58,9 @@ def test_post_transaction_credit_ok(client: TestClient, test_account):
     assert "timestamp" in data
 
 
-def test_post_transaction_debit_ok(client: TestClient, test_account):
+async def test_post_transaction_debit_ok(client: AsyncClient, test_account):
     """POST /accounts/{id}/transactions with DEBIT (within balance) returns 200."""
-    response = client.post(
+    response = await client.post(
         f"/accounts/{test_account.id}/transactions",
         json={
             "amount": "25.00",
@@ -74,9 +74,9 @@ def test_post_transaction_debit_ok(client: TestClient, test_account):
     assert data["status"] == "PENDING"
 
 
-def test_post_transaction_insufficient_funds(client: TestClient, test_account):
+async def test_post_transaction_insufficient_funds(client: AsyncClient, test_account):
     """POST /accounts/{id}/transactions DEBIT over balance returns 400."""
-    response = client.post(
+    response = await client.post(
         f"/accounts/{test_account.id}/transactions",
         json={
             "amount": "200.00",
@@ -88,9 +88,9 @@ def test_post_transaction_insufficient_funds(client: TestClient, test_account):
     assert response.json()["detail"] == "Insufficient funds"
 
 
-def test_post_transaction_account_not_found(client: TestClient):
+async def test_post_transaction_account_not_found(client: AsyncClient):
     """POST /accounts/{id}/transactions returns 404 when account does not exist."""
-    response = client.post(
+    response = await client.post(
         "/accounts/999999/transactions",
         json={"amount": "10.00", "counterparty": "X", "type": "CREDIT"},
     )
@@ -98,25 +98,25 @@ def test_post_transaction_account_not_found(client: TestClient):
     assert response.json()["detail"] == "Account not found"
 
 
-def test_post_transaction_validation_error(client: TestClient, test_account):
+async def test_post_transaction_validation_error(client: AsyncClient, test_account):
     """POST with invalid body returns 422."""
-    response = client.post(
+    response = await client.post(
         f"/accounts/{test_account.id}/transactions",
         json={"amount": "10.00", "type": "CREDIT"},
     )
     assert response.status_code == 422
 
 
-def test_patch_transaction_settle_ok(client: TestClient, test_account):
+async def test_patch_transaction_settle_ok(client: AsyncClient, test_account):
     """PATCH to SETTLED on a PENDING transaction returns 200."""
-    create_resp = client.post(
+    create_resp = await client.post(
         f"/accounts/{test_account.id}/transactions",
         json={"amount": "10.00", "counterparty": "X", "type": "CREDIT"},
     )
     assert create_resp.status_code == 200
     tx_id = create_resp.json()["id"]
 
-    response = client.patch(
+    response = await client.patch(
         f"/accounts/{test_account.id}/transactions/{tx_id}",
         json={"status": "SETTLED"},
     )
@@ -124,16 +124,16 @@ def test_patch_transaction_settle_ok(client: TestClient, test_account):
     assert response.json()["status"] == "SETTLED"
 
 
-def test_patch_transaction_fail_ok(client: TestClient, test_account):
+async def test_patch_transaction_fail_ok(client: AsyncClient, test_account):
     """PATCH to FAILED on a PENDING transaction returns 200."""
-    create_resp = client.post(
+    create_resp = await client.post(
         f"/accounts/{test_account.id}/transactions",
         json={"amount": "10.00", "counterparty": "X", "type": "CREDIT"},
     )
     assert create_resp.status_code == 200
     tx_id = create_resp.json()["id"]
 
-    response = client.patch(
+    response = await client.patch(
         f"/accounts/{test_account.id}/transactions/{tx_id}",
         json={"status": "FAILED"},
     )
@@ -141,9 +141,9 @@ def test_patch_transaction_fail_ok(client: TestClient, test_account):
     assert response.json()["status"] == "FAILED"
 
 
-def test_patch_transaction_not_found(client: TestClient, test_account):
+async def test_patch_transaction_not_found(client: AsyncClient, test_account):
     """PATCH when transaction does not exist returns 404."""
-    response = client.patch(
+    response = await client.patch(
         f"/accounts/{test_account.id}/transactions/999999",
         json={"status": "SETTLED"},
     )
@@ -151,20 +151,20 @@ def test_patch_transaction_not_found(client: TestClient, test_account):
     assert response.json()["detail"] == "Transaction not found"
 
 
-def test_patch_transaction_invalid_transition(client: TestClient, test_account):
+async def test_patch_transaction_invalid_transition(client: AsyncClient, test_account):
     """PATCH to SETTLED on already SETTLED transaction returns 400."""
-    create_resp = client.post(
+    create_resp = await client.post(
         f"/accounts/{test_account.id}/transactions",
         json={"amount": "10.00", "counterparty": "X", "type": "CREDIT"},
     )
     assert create_resp.status_code == 200
     tx_id = create_resp.json()["id"]
-    client.patch(
+    await client.patch(
         f"/accounts/{test_account.id}/transactions/{tx_id}",
         json={"status": "SETTLED"},
     )
 
-    response = client.patch(
+    response = await client.patch(
         f"/accounts/{test_account.id}/transactions/{tx_id}",
         json={"status": "SETTLED"},
     )

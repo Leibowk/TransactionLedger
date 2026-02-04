@@ -1,6 +1,6 @@
 """LedgerService unit tests: business logic with a fake Repository (no DB)."""
 from decimal import Decimal
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -15,8 +15,9 @@ from app.schemas import TransactionCreate, TransactionType as SchemaTransactionT
 from app.services.ledger_service import LedgerService
 
 
-def _make_account(available_balance="100.00", current_balance="100.00"):
+def _make_account(available_balance="100.00", current_balance="100.00", id=1):
     acc = MagicMock()
+    acc.id = id
     acc.available_balance = Decimal(available_balance)
     acc.current_balance = Decimal(current_balance)
     return acc
@@ -30,70 +31,44 @@ def _make_transaction(amount="10.00", type_=TransactionType.CREDIT, status=Trans
     return tx
 
 
-def test_get_account_returns_account_when_found():
+async def test_get_account_returns_account_when_found():
     repo = MagicMock()
     account = _make_account()
-    repo.get_account.return_value = account
+    repo.get_account = AsyncMock(return_value=account)
 
     service = LedgerService(repo)
-    result = service.get_account(1)
+    result = await service.get_account(1)
 
     assert result is account
     repo.get_account.assert_called_once_with(1)
 
 
-def test_get_account_raises_when_not_found():
+async def test_get_account_raises_when_not_found():
     repo = MagicMock()
-    repo.get_account.return_value = None
+    repo.get_account = AsyncMock(return_value=None)
 
     service = LedgerService(repo)
 
     with pytest.raises(AccountNotFoundError):
-        service.get_account(1)
+        await service.get_account(1)
 
 
-def test_get_transactions_raises_when_account_not_found():
-    repo = MagicMock()
-    repo.get_account.return_value = None
-
-    service = LedgerService(repo)
-
-    with pytest.raises(AccountNotFoundError):
-        service.get_transactions(1)
-
-
-def test_get_transactions_returns_list_when_account_exists():
+async def test_get_transactions_returns_list_when_account_exists():
     repo = MagicMock()
     account = _make_account()
-    repo.get_account.return_value = account
-    repo.get_transactions.return_value = []
+    repo.get_transactions = AsyncMock(return_value=[])
 
     service = LedgerService(repo)
-    result = service.get_transactions(1)
+    result = await service.get_transactions(account)
 
     assert result == []
-    repo.get_transactions.assert_called_once_with(1)
+    repo.get_transactions.assert_called_once_with(account.id)
 
 
-def test_create_transaction_raises_when_account_not_found():
-    repo = MagicMock()
-    repo.get_account_for_update.return_value = None
-
-    service = LedgerService(repo)
-    payload = TransactionCreate(
-        amount=Decimal("10.00"),
-        counterparty="X",
-        type=SchemaTransactionType.CREDIT,
-    )
-
-    with pytest.raises(AccountNotFoundError):
-        service.create_transaction(1, payload)
-
-
-def test_create_transaction_raises_insufficient_funds_for_debit():
+async def test_create_transaction_raises_insufficient_funds_for_debit():
     repo = MagicMock()
     account = _make_account(available_balance="10.00", current_balance="10.00")
-    repo.get_account_for_update.return_value = account
+    repo.get_account_for_update = AsyncMock(return_value=account)
 
     service = LedgerService(repo)
     payload = TransactionCreate(
@@ -103,15 +78,16 @@ def test_create_transaction_raises_insufficient_funds_for_debit():
     )
 
     with pytest.raises(InsufficientFundsError):
-        service.create_transaction(1, payload)
+        await service.create_transaction(account, payload)
 
 
-def test_create_transaction_credit_calls_commit_and_refresh():
+async def test_create_transaction_credit_calls_commit_and_refresh():
     repo = MagicMock()
     account = _make_account()
-    repo.get_account_for_update.return_value = account
     inserted = MagicMock()
-    repo.insert_transaction.return_value = inserted
+    repo.insert_transaction = AsyncMock(return_value=inserted)
+    repo.commit = AsyncMock()
+    repo.refresh = AsyncMock()
 
     service = LedgerService(repo)
     payload = TransactionCreate(
@@ -120,7 +96,7 @@ def test_create_transaction_credit_calls_commit_and_refresh():
         type=SchemaTransactionType.CREDIT,
     )
 
-    result = service.create_transaction(1, payload)
+    result = await service.create_transaction(account, payload)
 
     assert result is inserted
     repo.insert_transaction.assert_called_once()
@@ -129,12 +105,13 @@ def test_create_transaction_credit_calls_commit_and_refresh():
     assert account.current_balance == Decimal("125.00")
 
 
-def test_create_transaction_debit_updates_balances():
+async def test_create_transaction_debit_updates_balances():
     repo = MagicMock()
     account = _make_account(available_balance="100.00", current_balance="100.00")
-    repo.get_account_for_update.return_value = account
     inserted = MagicMock()
-    repo.insert_transaction.return_value = inserted
+    repo.insert_transaction = AsyncMock(return_value=inserted)
+    repo.commit = AsyncMock()
+    repo.refresh = AsyncMock()
 
     service = LedgerService(repo)
     payload = TransactionCreate(
@@ -143,54 +120,43 @@ def test_create_transaction_debit_updates_balances():
         type=SchemaTransactionType.DEBIT,
     )
 
-    service.create_transaction(1, payload)
+    await service.create_transaction(account, payload)
 
     assert account.available_balance == Decimal("70.00")
     assert account.current_balance == Decimal("70.00")
 
 
-def test_update_transaction_status_raises_when_transaction_not_found():
+async def test_get_transaction_raises_when_not_found():
     repo = MagicMock()
-    repo.get_transaction.return_value = None
+    repo.get_transaction = AsyncMock(return_value=None)
 
     service = LedgerService(repo)
 
     with pytest.raises(TransactionNotFoundError):
-        service.update_transaction_status(1, 99, "SETTLED")
+        await service.get_transaction(1, 99)
 
 
-def test_update_transaction_status_raises_when_not_pending():
+async def test_update_transaction_status_raises_when_not_pending():
     repo = MagicMock()
+    account = _make_account()
     tx = _make_transaction(status=TransactionStatus.SETTLED)
-    repo.get_transaction.return_value = tx
+    repo.get_transaction = AsyncMock(return_value=tx)
 
     service = LedgerService(repo)
 
     with pytest.raises(InvalidTransitionError):
-        service.update_transaction_status(1, 1, "SETTLED")
+        await service.update_transaction_status(account, tx, "SETTLED")
 
 
-def test_update_transaction_status_raises_when_account_not_found():
-    repo = MagicMock()
-    tx = _make_transaction()
-    repo.get_transaction.return_value = tx
-    repo.get_account_for_update.return_value = None
-
-    service = LedgerService(repo)
-
-    with pytest.raises(AccountNotFoundError):
-        service.update_transaction_status(1, 1, "SETTLED")
-
-
-def test_update_transaction_status_settle_credit_updates_available_balance():
+async def test_update_transaction_status_settle_credit_updates_available_balance():
     repo = MagicMock()
     tx = _make_transaction(amount="20.00", type_=TransactionType.CREDIT)
     account = _make_account(available_balance="80.00", current_balance="100.00")
-    repo.get_transaction.return_value = tx
-    repo.get_account_for_update.return_value = account
+    repo.commit = AsyncMock()
+    repo.refresh = AsyncMock()
 
     service = LedgerService(repo)
-    result = service.update_transaction_status(1, 1, "SETTLED")
+    result = await service.update_transaction_status(account, tx, "SETTLED")
 
     assert result is tx
     assert account.available_balance == Decimal("100.00")
@@ -198,8 +164,9 @@ def test_update_transaction_status_settle_credit_updates_available_balance():
     repo.refresh.assert_called_once_with(tx)
 
 
-def test_rollback_calls_repo_rollback():
+async def test_rollback_calls_repo_rollback():
     repo = MagicMock()
+    repo.rollback = AsyncMock()
     service = LedgerService(repo)
-    service.rollback()
+    await service.rollback()
     repo.rollback.assert_called_once()

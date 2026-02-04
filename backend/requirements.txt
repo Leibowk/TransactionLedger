@@ -1,7 +1,10 @@
 fastapi
-sqlalchemy
+sqlalchemy[asyncio]
 alembic
 pydantic
 psycopg2-binary
+asyncpg
 python-dotenv
 pytest
+pytest-asyncio
+httpx
