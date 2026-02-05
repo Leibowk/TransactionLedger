@@ -5,6 +5,19 @@ export const DEFAULT_ACCOUNT_ID =
     ? Number(import.meta.env.VITE_ACCOUNT_ID)
     : 1;
 
+export const DEFAULT_MEMBER_ID =
+  import.meta.env.VITE_MEMBER_ID != null
+    ? Number(import.meta.env.VITE_MEMBER_ID)
+    : 1;
+
+export async function getAccountsByMember(memberId) {
+  const res = await fetch(`${baseUrl}/members/${memberId}/accounts`);
+  if (!res.ok) {
+    throw new Error(res.status === 404 ? "Member not found" : "Could not load accounts");
+  }
+  return res.json();
+}
+
 export async function getAccount(accountId) {
   const res = await fetch(`${baseUrl}/accounts/${accountId}`);
   if (!res.ok) {

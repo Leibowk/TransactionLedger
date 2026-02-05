@@ -10,6 +10,7 @@ from ..exceptions import (
     AccountNotFoundError,
     InsufficientFundsError,
     InvalidTransitionError,
+    MemberNotFoundError,
     TransactionNotFoundError,
 )
 
@@ -26,6 +27,15 @@ class LedgerService:
 
     def __init__(self, repo: Repository):
         self._repo = repo
+
+    async def get_member(self, member_id: int):
+        member = await self._repo.get_member(member_id)
+        if member is None:
+            raise MemberNotFoundError("Member not found")
+        return member
+
+    async def get_accounts_by_member(self, member_id: int):
+        return await self._repo.get_accounts_by_member(member_id)
 
     async def get_account(self, account_id: int) -> Account:
         account = await self._repo.get_account(account_id)

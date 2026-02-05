@@ -2,9 +2,20 @@
 
 from fastapi import Depends, HTTPException
 
-from ..models import Account, Transaction
+from ..models import Account, Member, Transaction
 from ..services.ledger_service import LedgerService, get_ledger_service
-from ..exceptions import AccountNotFoundError, TransactionNotFoundError
+from ..exceptions import AccountNotFoundError, MemberNotFoundError, TransactionNotFoundError
+
+
+async def valid_member(
+    member_id: int,
+    ledger: LedgerService = Depends(get_ledger_service),
+) -> Member:
+    """Validate member exists; return it or raise 404."""
+    try:
+        return await ledger.get_member(member_id)
+    except MemberNotFoundError:
+        raise HTTPException(status_code=404, detail="Member not found")
 
 
 async def valid_account(

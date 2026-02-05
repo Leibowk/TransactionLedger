@@ -8,7 +8,7 @@ function formatCurrency(value) {
   }).format(num ?? 0);
 }
 
-export function AccountSummary({ account }) {
+export function AccountSummary({ account, accounts, selectedAccountId, onAccountChange }) {
   if (!account) return null;
 
   return (
@@ -30,11 +30,26 @@ export function AccountSummary({ account }) {
         )}
         <div>
           <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-            Account name
+            Account
           </p>
-          <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-            {account.name}
-          </p>
+          {accounts && accounts.length > 0 ? (
+            <select
+              value={selectedAccountId ?? ""}
+              onChange={(e) => onAccountChange?.(Number(e.target.value))}
+              className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+              aria-label="Select account"
+            >
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+              {account.name}
+            </p>
+          )}
         </div>
         <div>
           <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
