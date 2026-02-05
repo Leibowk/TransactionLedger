@@ -75,12 +75,13 @@ class Repository:
         await self._db.flush()
         return transaction
 
-    async def commit(self) -> None:
-        await self._db.commit()
+    async def save_transaction_and_account(
+        self, transaction: models.Transaction, account: models.Account
+    ) -> models.Transaction:
+        """Add transaction and flush; account is already tracked and mutated."""
+        self._db.add(transaction)
+        await self._db.flush()
+        return transaction
 
     async def rollback(self) -> None:
         await self._db.rollback()
-
-    async def refresh(self, *objs) -> None:
-        for obj in objs:
-            await self._db.refresh(obj)

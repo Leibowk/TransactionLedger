@@ -29,9 +29,12 @@ AsyncSessionLocal = async_sessionmaker(
 
 
 async def get_db():
-    """Dependency: yields a request-scoped async DB session."""
+    """Dependency: yields a request-scoped async DB session. Commits on success, rolls back on exception."""
     async with AsyncSessionLocal() as session:
         try:
             yield session
-        finally:
-            await session.close()
+        except Exception:
+            await session.rollback()
+            raise
+        else:
+            await session.commit()

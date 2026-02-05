@@ -51,7 +51,7 @@ async def create_transaction(
     try:
         return await ledger.create_transaction(account, transaction)
     except DomainError as e:
-        await handle_domain_exception(e, ledger)
+        await handle_domain_exception(e)
 
 
 @router.patch(
@@ -68,4 +68,4 @@ async def update_transaction_status(
     try:
         return await ledger.update_transaction_status(account, transaction, body.status)
     except DomainError as e:
-        await handle_domain_exception(e, ledger)
+        await handle_domain_exception(e)

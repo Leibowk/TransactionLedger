@@ -7,7 +7,6 @@ from ..exceptions import (
     InsufficientFundsError,
     InvalidTransitionError,
 )
-from ..services.ledger_service import LedgerService
 
 DOMAIN_EXCEPTION_TO_HTTP = {
     AccountNotFoundError: (404, "Account not found"),
@@ -17,9 +16,8 @@ DOMAIN_EXCEPTION_TO_HTTP = {
 }
 
 
-async def handle_domain_exception(e: DomainError, ledger: LedgerService) -> None:
-    """Roll back the session and raise an HTTPException from a domain exception."""
-    await ledger.rollback()
+async def handle_domain_exception(e: DomainError) -> None:
+    """Raise HTTPException from a domain exception. get_db handles rollback on exception propagation."""
     pair = DOMAIN_EXCEPTION_TO_HTTP.get(type(e))
     if pair is None:
         raise HTTPException(status_code=500, detail="Internal server error")

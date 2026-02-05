@@ -27,9 +27,6 @@ class LedgerService:
     def __init__(self, repo: Repository):
         self._repo = repo
 
-    async def rollback(self) -> None:
-        await self._repo.rollback()
-
     async def get_account(self, account_id: int) -> Account:
         account = await self._repo.get_account(account_id)
         if account is None:
@@ -60,7 +57,7 @@ class LedgerService:
             if payload.type.value == "CREDIT"
             else models.TransactionType.DEBIT
         )
-        transaction = await self._repo.insert_transaction(
+        transaction = models.Transaction(
             account_id=account.id,
             amount=payload.amount,
             counterparty=payload.counterparty,
@@ -82,9 +79,7 @@ class LedgerService:
                 account.current_balance - amount
             ).quantize(QUANTIZE)
 
-        await self._repo.commit()
-        await self._repo.refresh(transaction)
-        return transaction
+        return await self._repo.save_transaction_and_account(transaction, account)
 
     async def update_transaction_status(
         self, account: Account, transaction: Transaction, new_status: str
@@ -122,6 +117,4 @@ class LedgerService:
                     account.current_balance + amount
                 ).quantize(QUANTIZE)
 
-        await self._repo.commit()
-        await self._repo.refresh(transaction)
         return transaction

@@ -81,13 +81,11 @@ async def test_create_transaction_raises_insufficient_funds_for_debit():
         await service.create_transaction(account, payload)
 
 
-async def test_create_transaction_credit_calls_commit_and_refresh():
+async def test_create_transaction_credit_calls_save_transaction_and_account():
     repo = MagicMock()
     account = _make_account()
-    inserted = MagicMock()
-    repo.insert_transaction = AsyncMock(return_value=inserted)
-    repo.commit = AsyncMock()
-    repo.refresh = AsyncMock()
+    returned_tx = MagicMock()
+    repo.save_transaction_and_account = AsyncMock(return_value=returned_tx)
 
     service = LedgerService(repo)
     payload = TransactionCreate(
@@ -98,20 +96,20 @@ async def test_create_transaction_credit_calls_commit_and_refresh():
 
     result = await service.create_transaction(account, payload)
 
-    assert result is inserted
-    repo.insert_transaction.assert_called_once()
-    repo.commit.assert_called_once()
-    repo.refresh.assert_called_once_with(inserted)
+    assert result is returned_tx
+    repo.save_transaction_and_account.assert_called_once()
+    call_args = repo.save_transaction_and_account.call_args
+    assert call_args[0][1] is account
+    assert call_args[0][0].amount == Decimal("25.00")
+    assert call_args[0][0].type == TransactionType.CREDIT
     assert account.current_balance == Decimal("125.00")
 
 
 async def test_create_transaction_debit_updates_balances():
     repo = MagicMock()
     account = _make_account(available_balance="100.00", current_balance="100.00")
-    inserted = MagicMock()
-    repo.insert_transaction = AsyncMock(return_value=inserted)
-    repo.commit = AsyncMock()
-    repo.refresh = AsyncMock()
+    returned_tx = MagicMock()
+    repo.save_transaction_and_account = AsyncMock(return_value=returned_tx)
 
     service = LedgerService(repo)
     payload = TransactionCreate(
@@ -124,6 +122,7 @@ async def test_create_transaction_debit_updates_balances():
 
     assert account.available_balance == Decimal("70.00")
     assert account.current_balance == Decimal("70.00")
+    repo.save_transaction_and_account.assert_called_once()
 
 
 async def test_get_transaction_raises_when_not_found():
@@ -152,21 +151,9 @@ async def test_update_transaction_status_settle_credit_updates_available_balance
     repo = MagicMock()
     tx = _make_transaction(amount="20.00", type_=TransactionType.CREDIT)
     account = _make_account(available_balance="80.00", current_balance="100.00")
-    repo.commit = AsyncMock()
-    repo.refresh = AsyncMock()
 
     service = LedgerService(repo)
     result = await service.update_transaction_status(account, tx, "SETTLED")
 
     assert result is tx
     assert account.available_balance == Decimal("100.00")
-    repo.commit.assert_called_once()
-    repo.refresh.assert_called_once_with(tx)
-
-
-async def test_rollback_calls_repo_rollback():
-    repo = MagicMock()
-    repo.rollback = AsyncMock()
-    service = LedgerService(repo)
-    await service.rollback()
-    repo.rollback.assert_called_once()
