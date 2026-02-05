@@ -1,3 +1,5 @@
+![App screenshot](./images/screenshot.png)
+
 TransactionLedger is a high-integrity financial ledger service designed to manage fund movements with absolute precision. This project demonstrates a production-ready approach to tracking account balances, managing transaction lifecycles, and ensuring data consistency in a banking environment.
 🚀 Core Functionality
 
