@@ -18,6 +18,11 @@ class TransactionNotFoundError(DomainError):
     pass
 
 
+class MemberNotFoundError(DomainError):
+    """Raised when a member is not found."""
+    pass
+
+
 class InvalidTransitionError(DomainError):
     """Raised when a transaction status transition is not allowed (e.g. not PENDING)."""
     pass

@@ -21,6 +21,21 @@ class Repository:
     def __init__(self, db: AsyncSession):
         self._db = db
 
+    async def get_member(self, member_id: int):
+        result = await self._db.execute(
+            select(models.Member).where(models.Member.id == member_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_accounts_by_member(self, member_id: int):
+        result = await self._db.execute(
+            select(models.Account)
+            .options(joinedload(models.Account.member))
+            .where(models.Account.member_id == member_id)
+            .order_by(models.Account.account_type, models.Account.id)
+        )
+        return list(result.unique().scalars().all())
+
     async def get_account(self, account_id: int):
         result = await self._db.execute(
             select(models.Account)

@@ -8,12 +8,26 @@ from .error_handling import handle_domain_exception
 from .dependencies import (
     valid_account,
     valid_account_for_update,
+    valid_member,
     valid_transaction,
 )
 
 router = APIRouter()
 
 RESPONSE_404 = {404: {"description": "Not found"}}
+
+
+@router.get(
+    "/members/{member_id}/accounts",
+    response_model=list[schemas.Account],
+    responses=RESPONSE_404,
+)
+async def read_member_accounts(
+    member=Depends(valid_member),
+    ledger: LedgerService = Depends(get_ledger_service),
+):
+    """Return all accounts for the given member."""
+    return await ledger.get_accounts_by_member(member.id)
 
 
 @router.get(

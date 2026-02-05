@@ -17,6 +17,24 @@ async def test_get_account_ok(client: AsyncClient, test_account):
     assert data["member"]["first_name"] == "Test"
 
 
+async def test_get_member_accounts_ok(client: AsyncClient, test_account):
+    """GET /members/{id}/accounts returns 200 and list of accounts."""
+    member_id = test_account.member_id
+    response = await client.get(f"/members/{member_id}/accounts")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert len(data) >= 1
+    assert any(a["id"] == test_account.id for a in data)
+
+
+async def test_get_member_accounts_not_found(client: AsyncClient):
+    """GET /members/{id}/accounts returns 404 when member does not exist."""
+    response = await client.get("/members/999999/accounts")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Member not found"
+
+
 async def test_get_account_not_found(client: AsyncClient):
     """GET /accounts/{id} returns 404 when account does not exist."""
     response = await client.get("/accounts/999999")
